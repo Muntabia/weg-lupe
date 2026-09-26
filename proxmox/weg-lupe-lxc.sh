@@ -35,11 +35,18 @@ STORAGE="${STORAGE:-$(pvesm status -content rootdir 2>/dev/null | awk 'NR>1 && $
 TSTORAGE="${TEMPLATE_STORAGE:-$(pvesm status -content vztmpl 2>/dev/null | awk 'NR>1 && $3=="active" && !f {print $1; f=1}')}"
 [ -n "$TSTORAGE" ] || die "Kein Speicher für Vorlagen (vztmpl) gefunden. Mit TEMPLATE_STORAGE=... angeben."
 
-c_info "Suche Debian-Vorlage"
+ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
+c_info "Suche Debian-Vorlage für $ARCH"
 pveam update >/dev/null 2>&1 || true
-TEMPLATE="$(pveam available --section system 2>/dev/null | awk '$2 ~ /^debian-13-standard/ {print $2}' | sort -V | tail -1)"
-[ -n "$TEMPLATE" ] || TEMPLATE="$(pveam available --section system 2>/dev/null | awk '$2 ~ /^debian-12-standard/ {print $2}' | sort -V | tail -1)"
-[ -n "$TEMPLATE" ] || die "Keine Debian-Vorlage gefunden. Internetverbindung des Hosts prüfen."
+# Nur Vorlagen für die Architektur des Hosts (Proxmox bietet amd64 und arm64 an)
+find_template() {
+  pveam available --section system 2>/dev/null \
+    | awk -v pre="debian-$1-standard_" -v suf="_${ARCH}.tar" 'index($2, pre) == 1 && index($2, suf) > 0 {print $2}' \
+    | sort -V | tail -1
+}
+TEMPLATE="$(find_template 13)"
+[ -n "$TEMPLATE" ] || TEMPLATE="$(find_template 12)"
+[ -n "$TEMPLATE" ] || die "Keine Debian-Vorlage für $ARCH gefunden. Internetverbindung des Hosts prüfen."
 
 NET="name=eth0,bridge=$BRIDGE,ip=$IP"
 [ -n "$GATEWAY" ] && NET="$NET,gw=$GATEWAY"
@@ -49,7 +56,7 @@ cat <<EOF
   WEG-Lupe wird mit diesen Werten installiert:
     Container-ID   $CTID
     Hostname       $CT_HOSTNAME
-    Vorlage        $TEMPLATE
+    Vorlage        $TEMPLATE ($ARCH)
     Speicher       $STORAGE (${DISK} GB)
     CPU / RAM      $CORES Kerne / $RAM MB
     Netzwerk       $BRIDGE, IP: $IP
