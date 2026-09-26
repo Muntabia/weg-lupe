@@ -1,19 +1,14 @@
 #!/usr/bin/env bash
 # WEG-Lupe auf Proxmox VE installieren: legt einen Debian-LXC an und richtet alles ein.
 #
-# Skript auf den Proxmox-Host kopieren und dort als root ausführen:
-#   bash weg-lupe-lxc.sh
-#
-# Das Repository ist privat. Der Container bekommt deshalb einen eigenen, schreibgeschützten
-# Deploy Key. Das Skript zeigt ihn während der Installation an; du trägst ihn einmal auf GitHub ein.
+# Auf dem Proxmox-Host als root ausführen:
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/Muntabia/weg-lupe/main/proxmox/weg-lupe-lxc.sh)"
 #
 # Standardwerte lassen sich per Umgebungsvariable überschreiben, z. B.:
 #   CTID=150 RAM=4096 STORAGE=local-zfs BRIDGE=vmbr1 bash weg-lupe-lxc.sh
-# Ist das Repository öffentlich, geht es auch ohne Deploy Key:
-#   REPO_URL=https://github.com/Muntabia/weg-lupe.git bash weg-lupe-lxc.sh
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-git@github.com:Muntabia/weg-lupe.git}"
+REPO_URL="${REPO_URL:-https://github.com/Muntabia/weg-lupe.git}"
 BRANCH="${BRANCH:-main}"
 CT_HOSTNAME="${CT_HOSTNAME:-weg-lupe}"
 CORES="${CORES:-2}"
@@ -27,25 +22,10 @@ PORT="${PORT:-8080}"
 
 c_ok() { printf '\e[32m%s\e[0m\n' "$*"; }
 c_info() { printf '\e[36m==> %s\e[0m\n' "$*"; }
-die() { printf '\e[31mFehler: %s\e[0m\n' "$*" >&2; on_error; exit 1; }
+die() { printf '\e[31mFehler: %s\e[0m\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "Bitte als root auf dem Proxmox-Host ausführen."
 command -v pct >/dev/null || die "pct nicht gefunden. Das Skript muss auf dem Proxmox-Host laufen, nicht in einem Container."
-
-USE_SSH=0
-case "$REPO_URL" in git@*|ssh://*) USE_SSH=1 ;; esac
-if [ "$USE_SSH" -eq 1 ] && ! { : </dev/tty; } 2>/dev/null; then
-  die "Für den Deploy Key muss das Skript interaktiv in einer Shell laufen."
-fi
-# GitHubs veröffentlichter Ed25519-Hostschlüssel (docs.github.com, "GitHub's SSH key fingerprints")
-GITHUB_ED25519_FP="SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU"
-CREATED=0
-on_error() {
-  if [ "$CREATED" -eq 1 ]; then
-    printf '\n\e[33mDer Container %s bleibt zur Fehlersuche bestehen. Entfernen mit: pct stop %s; pct destroy %s --purge\e[0m\n' "$CTID" "$CTID" "$CTID" >&2
-  fi
-}
-trap on_error ERR
 
 CTID="${CTID:-$(pvesh get /cluster/nextid)}"
 pct status "$CTID" >/dev/null 2>&1 && die "Container-ID $CTID ist schon vergeben. Andere ID mit CTID=... wählen."
@@ -92,7 +72,6 @@ pct create "$CTID" "$TSTORAGE:vztmpl/$TEMPLATE" \
   --rootfs "$STORAGE:$DISK" --net0 "$NET" \
   --unprivileged 1 --features nesting=1 --onboot 1 \
   --description "WEG-Lupe: WEG-Unterlagen prüfen. Oberfläche auf Port $PORT." >/dev/null
-CREATED=1
 pct start "$CTID"
 
 c_info "Warte auf Netzwerk"
@@ -102,72 +81,10 @@ for i in $(seq 1 60); do
   sleep 2
 done
 
-c_info "Grundpakete im Container"
-pct exec "$CTID" -- env LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive bash -c \
-  "apt-get update -qq && apt-get install -y -qq git openssh-client ca-certificates >/dev/null" \
-  || die "Paketinstallation im Container fehlgeschlagen."
-
-if [ "$USE_SSH" -eq 1 ]; then
-  c_info "Deploy Key für GitHub erzeugen"
-  SETUP="$(mktemp)"
-  cat > "$SETUP" <<'EOS'
-set -euo pipefail
-install -d -m 700 /root/.ssh
-KEY=/root/.ssh/weg-lupe_deploy
-[ -f "$KEY" ] || ssh-keygen -q -t ed25519 -N "" -C "weg-lupe@$(hostname)" -f "$KEY"
-ssh-keyscan -t ed25519 github.com 2>/dev/null > /tmp/github_hostkey
-FP="$(ssh-keygen -lf /tmp/github_hostkey | awk '{print $2}')"
-if [ "$FP" != "$1" ]; then
-  echo "GitHub-Hostschlüssel stimmt nicht: $FP (erwartet $1). Abbruch." >&2
-  exit 3
-fi
-touch /root/.ssh/known_hosts
-grep -qF "$(cut -d' ' -f2- /tmp/github_hostkey)" /root/.ssh/known_hosts || cat /tmp/github_hostkey >> /root/.ssh/known_hosts
-cat > /root/.ssh/config <<CFG
-Host github.com
-  User git
-  IdentityFile $KEY
-  IdentitiesOnly yes
-  StrictHostKeyChecking yes
-CFG
-chmod 600 /root/.ssh/config /root/.ssh/known_hosts
-EOS
-  pct push "$CTID" "$SETUP" /root/weg-lupe-ssh-setup.sh
-  rm -f "$SETUP"
-  pct exec "$CTID" -- bash /root/weg-lupe-ssh-setup.sh "$GITHUB_ED25519_FP" || die "SSH-Einrichtung fehlgeschlagen."
-  pct exec "$CTID" -- rm -f /root/weg-lupe-ssh-setup.sh
-  PUBKEY="$(pct exec "$CTID" -- cat /root/.ssh/weg-lupe_deploy.pub)"
-  REPO_PATH="$(printf '%s' "$REPO_URL" | sed -E 's#^(git@github\.com:|ssh://git@github\.com/)##; s#\.git$##')"
-
-  cat <<EOF
-
-  ----------------------------------------------------------------------
-  Jetzt einmalig den Deploy Key auf GitHub eintragen:
-
-  1. Öffne  https://github.com/$REPO_PATH/settings/keys/new
-  2. Title:  Proxmox $CT_HOSTNAME (CT $CTID)
-  3. Key:    die folgende Zeile komplett kopieren
-
-$PUBKEY
-
-  4. "Allow write access" NICHT ankreuzen, dann "Add key".
-  ----------------------------------------------------------------------
-
-EOF
-  while true; do
-    read -r -p "Enter drücken, sobald der Key eingetragen ist (a = abbrechen): " answer </dev/tty || answer="a"
-    case "${answer,,}" in a|abbrechen) die "Abgebrochen." ;; esac
-    if pct exec "$CTID" -- git ls-remote --heads "$REPO_URL" >/dev/null 2>&1; then
-      c_ok "Zugriff auf GitHub klappt."
-      break
-    fi
-    echo "GitHub lehnt den Zugriff noch ab. Key richtig und vollständig eingetragen? Nochmal versuchen."
-  done
-fi
-
 c_info "Installiere WEG-Lupe im Container (dauert 2–5 Minuten)"
 pct exec "$CTID" -- env LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive bash -c "
   set -e
+  apt-get update -qq && apt-get install -y -qq git ca-certificates >/dev/null
   git clone -q --branch '$BRANCH' '$REPO_URL' /opt/weg-lupe
   PORT='$PORT' bash /opt/weg-lupe/install-lxc.sh
 " || die "Installation im Container fehlgeschlagen. Details: pct enter $CTID, dann journalctl -u weg-lupe"
@@ -189,7 +106,7 @@ cat <<EOF
   KI einrichten:  In der App oben rechts auf das Zahnrad klicken.
 
   Nützliche Befehle auf dem Proxmox-Host:
-    Aktualisieren:       pct exec $CTID -- weglupe-update   (nach jedem git push)
+    Aktualisieren:       pct exec $CTID -- weglupe-update
     Passwort entfernen:  pct exec $CTID -- weglupe-reset-password
     Log ansehen:         pct exec $CTID -- journalctl -u weg-lupe -f
     Backup:              vzdump $CTID

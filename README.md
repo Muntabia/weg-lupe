@@ -19,48 +19,35 @@ Lade die Protokolle der Eigentümerversammlungen, Wirtschaftspläne, Jahresabrec
 
 ## Installation auf Proxmox
 
-Das Repository ist privat. Deshalb holt sich der Container den Code über einen eigenen **Deploy Key**: einen SSH-Schlüssel, der nur dieses eine Repository lesen darf. Das Skript erzeugt ihn und zeigt ihn während der Installation an.
-
-**1. Skript auf den Proxmox-Host kopieren** (von Windows aus, in PowerShell):
-
-```powershell
-scp C:\Users\julia\Projekte\WEG-Lupe\proxmox\weg-lupe-lxc.sh root@<proxmox-ip>:/root/
-```
-
-**2. Auf dem Proxmox-Host als root ausführen** (Shell im Webinterface oder per SSH):
+Auf dem Proxmox-Host (Shell im Webinterface: Rechenzentrum → Knoten → Shell) als root:
 
 ```bash
-bash /root/weg-lupe-lxc.sh
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Muntabia/weg-lupe/main/proxmox/weg-lupe-lxc.sh)"
 ```
 
 Das Skript
 - nimmt die nächste freie Container-ID und den ersten passenden Speicher,
-- lädt die aktuelle Debian-Vorlage und legt einen unprivilegierten LXC an (2 Kerne, 2 GB RAM, 10 GB, DHCP an `vmbr0`),
-- erzeugt im Container einen Deploy Key und prüft GitHubs Hostschlüssel gegen den offiziellen Fingerabdruck,
-- **hält an und zeigt den Key an.** Du öffnest den angezeigten Link (GitHub → Repo → Settings → Deploy keys → Add deploy key), fügst den Key ein, lässt „Allow write access“ **aus** und drückst im Terminal Enter,
-- klont das Repo und installiert WEG-Lupe mit Texterkennung als Dienst, der beim Booten startet,
+- lädt die aktuelle Debian-Vorlage,
+- legt einen unprivilegierten LXC an (2 Kerne, 2 GB RAM, 10 GB, DHCP an `vmbr0`),
+- installiert WEG-Lupe mit Texterkennung als Dienst, der beim Booten startet,
 - erzeugt ein zufälliges Passwort und zeigt am Ende Adresse, Benutzer und Passwort an.
 
 Andere Werte lassen sich vorab setzen, zum Beispiel:
 
 ```bash
-CTID=150 RAM=4096 STORAGE=local-zfs IP=192.168.1.60/24 GATEWAY=192.168.1.1 bash /root/weg-lupe-lxc.sh
+CTID=150 RAM=4096 STORAGE=local-zfs IP=192.168.1.60/24 GATEWAY=192.168.1.1 \
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/Muntabia/weg-lupe/main/proxmox/weg-lupe-lxc.sh)"
 ```
 
 Mögliche Variablen: `CTID`, `CT_HOSTNAME`, `CORES`, `RAM`, `SWAP`, `DISK`, `STORAGE`, `TEMPLATE_STORAGE`, `BRIDGE`, `IP`, `GATEWAY`, `PORT`, `REPO_URL`, `BRANCH`.
 
-Wird das Repository später öffentlich, geht es auch ohne Deploy Key und ohne Kopieren:
-
-```bash
-REPO_URL=https://github.com/Muntabia/weg-lupe.git \
-  bash -c "$(curl -fsSL https://raw.githubusercontent.com/Muntabia/weg-lupe/main/proxmox/weg-lupe-lxc.sh)"
-```
+Das Repository muss öffentlich sein, damit Skript und `git clone` ohne Anmeldung funktionieren.
 
 ### Befehle auf dem Proxmox-Host
 
 | Zweck | Befehl |
 |---|---|
-| Auf neue Version aktualisieren (nach `git push`) | `pct exec <ID> -- weglupe-update` |
+| Auf neue Version aktualisieren | `pct exec <ID> -- weglupe-update` |
 | Passwort entfernen (ausgesperrt) | `pct exec <ID> -- weglupe-reset-password` |
 | Neues Passwort setzen | `pct exec <ID> -- weglupe-reset-password NEUES_PASSWORT` |
 | Log ansehen | `pct exec <ID> -- journalctl -u weg-lupe -f` |
