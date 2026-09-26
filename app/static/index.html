@@ -91,7 +91,7 @@
           <label>Neues Passwort<input name="password" type="password" autocomplete="new-password" placeholder="mind. 8 Zeichen"></label>
           <label>Passwort wiederholen<input name="password2" type="password" autocomplete="new-password"></label>
         </div>
-        <p class="small muted">Nach dem Speichern fragt der Browser nach Benutzername und Passwort. Ausgesperrt? Auf dem Proxmox-Host <code>pct exec &lt;ID&gt; -- weglupe-reset-password</code> ausführen.</p>
+        <p class="small muted">Nach dem Speichern fragt der Browser nach Benutzername und Passwort. Ausgesperrt? Auf dem Proxmox-Host <code>pct exec &lt;ID&gt; -- /usr/local/bin/weglupe-reset-password</code> ausführen.</p>
         <div class="form-actions">
           <button class="btn primary" type="submit">Passwort speichern</button>
           <button class="btn danger-ghost" type="button" id="pwRemove">Passwort entfernen</button>

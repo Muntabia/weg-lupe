@@ -97,7 +97,7 @@ pct exec "$CTID" -- env LANG=C.UTF-8 DEBIAN_FRONTEND=noninteractive bash -c "
 " || die "Installation im Container fehlgeschlagen. Details: pct enter $CTID, dann journalctl -u weg-lupe"
 
 PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))')"
-pct exec "$CTID" -- weglupe-reset-password "$PASSWORD" >/dev/null
+pct exec "$CTID" -- env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/weglupe-reset-password "$PASSWORD" >/dev/null
 
 CT_IP="$(pct exec "$CTID" -- hostname -I | awk '{print $1}')"
 
@@ -113,8 +113,8 @@ cat <<EOF
   KI einrichten:  In der App oben rechts auf das Zahnrad klicken.
 
   Nützliche Befehle auf dem Proxmox-Host:
-    Aktualisieren:       pct exec $CTID -- weglupe-update
-    Passwort entfernen:  pct exec $CTID -- weglupe-reset-password
+    Aktualisieren:       pct exec $CTID -- /usr/local/bin/weglupe-update
+    Passwort entfernen:  pct exec $CTID -- /usr/local/bin/weglupe-reset-password
     Log ansehen:         pct exec $CTID -- journalctl -u weg-lupe -f
     Backup:              vzdump $CTID
 

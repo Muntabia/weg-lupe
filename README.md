@@ -47,9 +47,9 @@ Das Repository muss öffentlich sein, damit Skript und `git clone` ohne Anmeldun
 
 | Zweck | Befehl |
 |---|---|
-| Auf neue Version aktualisieren | `pct exec <ID> -- weglupe-update` |
-| Passwort entfernen (ausgesperrt) | `pct exec <ID> -- weglupe-reset-password` |
-| Neues Passwort setzen | `pct exec <ID> -- weglupe-reset-password NEUES_PASSWORT` |
+| Auf neue Version aktualisieren | `pct exec <ID> -- /usr/local/bin/weglupe-update` |
+| Passwort entfernen (ausgesperrt) | `pct exec <ID> -- /usr/local/bin/weglupe-reset-password` |
+| Neues Passwort setzen | `pct exec <ID> -- /usr/local/bin/weglupe-reset-password NEUES_PASSWORT` |
 | Log ansehen | `pct exec <ID> -- journalctl -u weg-lupe -f` |
 | Backup | `vzdump <ID>` oder im Proxmox-Webinterface |
 

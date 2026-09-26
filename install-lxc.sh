@@ -46,15 +46,17 @@ cat > /usr/local/bin/weglupe-update <<EOF
 #!/usr/bin/env bash
 # WEG-Lupe auf den neuesten Stand bringen
 set -euo pipefail
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 git -C "$APP_DIR" pull --ff-only
-"$APP_DIR/venv/bin/pip" install -q -r "$APP_DIR/requirements.txt"
-systemctl restart $SERVICE
+# Installationsskript erneut ausführen: aktualisiert Pakete, Dienst und diese Hilfsbefehle
+PORT=$PORT bash "$APP_DIR/install-lxc.sh"
 echo "WEG-Lupe aktualisiert: \$(git -C "$APP_DIR" log -1 --format='%h %s')"
 EOF
 
 cat > /usr/local/bin/weglupe-reset-password <<EOF
 #!/usr/bin/env bash
 # Ohne Argument: Passwort entfernen. Mit Argument: neues Passwort setzen (Benutzer: weg).
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 cd "$APP_DIR"
 exec runuser -u weglupe -- env DATA_DIR=$DATA_DIR "$APP_DIR/venv/bin/python" -m app.reset_password "\${1:-}"
 EOF
