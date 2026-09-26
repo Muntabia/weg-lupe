@@ -7,7 +7,7 @@ import re
 
 import httpx
 
-from . import config
+from . import settings
 
 CHUNK_SYSTEM = """Du bist ein erfahrener Prüfer für Wohnungseigentümergemeinschaften (WEG) in Deutschland.
 Ein Kaufinteressent einer Eigentumswohnung lässt Unterlagen der WEG prüfen (Versammlungsprotokolle, Wirtschaftspläne, Jahresabrechnungen, Beschlusssammlungen, Teilungserklärung).
@@ -63,17 +63,17 @@ def _anthropic(system: str, user: str, max_tokens: int) -> str:
     r = httpx.post(
         "https://api.anthropic.com/v1/messages",
         headers={
-            "x-api-key": config.ANTHROPIC_API_KEY,
+            "x-api-key": settings.get("anthropic_api_key"),
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         },
         json={
-            "model": config.default_model(),
+            "model": settings.model(),
             "max_tokens": max_tokens,
             "system": system,
             "messages": [{"role": "user", "content": user}],
         },
-        timeout=config.LLM_TIMEOUT,
+        timeout=settings.get("llm_timeout"),
     )
     if r.status_code != 200:
         raise LLMError(f"Anthropic-API {r.status_code}: {r.text[:400]}")
@@ -81,9 +81,14 @@ def _anthropic(system: str, user: str, max_tokens: int) -> str:
     return "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
 
 
+def _openai_headers() -> dict:
+    key = settings.get("openai_api_key")
+    return {"Authorization": f"Bearer {key}"} if key else {}
+
+
 def _openai(system: str, user: str, max_tokens: int, json_mode: bool) -> str:
     body = {
-        "model": config.default_model(),
+        "model": settings.model(),
         "max_tokens": max_tokens,
         "temperature": 0.1,
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -91,10 +96,10 @@ def _openai(system: str, user: str, max_tokens: int, json_mode: bool) -> str:
     if json_mode:
         body["response_format"] = {"type": "json_object"}
     r = httpx.post(
-        f"{config.OPENAI_BASE_URL}/chat/completions",
-        headers={"Authorization": f"Bearer {config.OPENAI_API_KEY}"},
+        f"{settings.get('openai_base_url')}/chat/completions",
+        headers=_openai_headers(),
         json=body,
-        timeout=config.LLM_TIMEOUT,
+        timeout=settings.get("llm_timeout"),
     )
     if r.status_code != 200:
         raise LLMError(f"KI-API {r.status_code}: {r.text[:400]}")
@@ -102,10 +107,10 @@ def _openai(system: str, user: str, max_tokens: int, json_mode: bool) -> str:
 
 
 def complete(system: str, user: str, max_tokens: int = 4000, json_mode: bool = False) -> str:
-    if not config.llm_enabled():
+    if not settings.llm_enabled():
         raise LLMError("Keine KI konfiguriert (LLM_PROVIDER / API-Key prüfen).")
     try:
-        if config.LLM_PROVIDER == "anthropic":
+        if settings.provider() == "anthropic":
             return _anthropic(system, user, max_tokens)
         return _openai(system, user, max_tokens, json_mode)
     except httpx.HTTPError as e:
@@ -138,3 +143,27 @@ def analyze_chunk(doc_label: str, chunk_text: str) -> list[dict]:
 
 def summarize(payload: str) -> str:
     return complete(SUMMARY_SYSTEM, payload, max_tokens=4000)
+
+
+def list_models() -> list[str]:
+    """Verfügbare Modelle beim eingestellten Anbieter abfragen."""
+    p = settings.provider()
+    try:
+        if p == "anthropic":
+            r = httpx.get("https://api.anthropic.com/v1/models?limit=100",
+                          headers={"x-api-key": settings.get("anthropic_api_key"), "anthropic-version": "2023-06-01"},
+                          timeout=20)
+        elif p == "openai":
+            r = httpx.get(f"{settings.get('openai_base_url')}/models", headers=_openai_headers(), timeout=20)
+        else:
+            return []
+    except httpx.HTTPError as e:
+        raise LLMError(f"Verbindung fehlgeschlagen: {e}") from e
+    if r.status_code != 200:
+        raise LLMError(f"Fehler {r.status_code}: {r.text[:300]}")
+    return sorted(m.get("id", "") for m in r.json().get("data", []) if m.get("id"))
+
+
+def test_connection() -> str:
+    reply = complete("Antworte nur mit dem Wort OK.", "Test", max_tokens=20)
+    return reply.strip()[:100]

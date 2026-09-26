@@ -71,6 +71,7 @@ async function openObject(id, editForm = false) {
   try { localStorage.setItem("weglupe.obj", id); } catch { }
   $("#sidebar").classList.remove("open");
   $("#emptyState").hidden = true;
+  $("#settingsView").hidden = true;
   $("#objView").hidden = false;
   $("#searchResults").innerHTML = ""; $("#searchInput").value = "";
   await refresh();
@@ -167,9 +168,8 @@ function renderSummary() {
   const docsReady = state.data.documents.some(d => d.status === "fertig");
   if (!state.meta.llm_enabled) {
     btn.hidden = true; meta.textContent = "";
-    body.innerHTML = `<div class="notice">Keine KI eingerichtet. Die Stichwort-Prüfung unten funktioniert trotzdem.<br>
-      Für die Einschätzung in der <code>.env</code> entweder <code>LLM_PROVIDER=anthropic</code> mit <code>ANTHROPIC_API_KEY</code>
-      oder <code>LLM_PROVIDER=openai</code> mit <code>OPENAI_BASE_URL</code> (z. B. Ollama auf deinem Proxmox) setzen.</div>`;
+    body.innerHTML = `<div class="notice">Keine KI eingerichtet. Die Stichwort-Prüfung unten funktioniert trotzdem.
+      Für eine Einschätzung mit Fragen an den Verkäufer wähle unter <button type="button" class="linkish" data-open-settings>Einstellungen</button> einen KI-Anbieter.</div>`;
     return;
   }
   btn.hidden = false;
@@ -354,12 +354,116 @@ async function doSearch(ev) {
     : `<div class="empty-list">Nichts gefunden.</div>`;
 }
 
-// ---------- Start ----------
-async function init() {
+// ---------- Einstellungen ----------
+async function refreshMeta() {
   state.meta = await api("/api/status");
   const badge = $("#aiBadge");
-  badge.textContent = state.meta.llm_enabled ? `KI: ${state.meta.model}` : "KI: aus (nur Stichworte)";
+  badge.textContent = state.meta.llm_enabled ? `KI: ${state.meta.model}` : "KI: aus";
   badge.classList.toggle("on", state.meta.llm_enabled);
+  $("#pwBadge").hidden = state.meta.password_set;
+}
+function showSettings(show) {
+  $("#settingsView").hidden = !show;
+  $("#sidebar").classList.remove("open");
+  if (show) { $("#objView").hidden = true; $("#emptyState").hidden = true; loadSettings().catch(e => toast(e.message)); }
+  else if (state.current != null) { $("#objView").hidden = false; refresh(); }
+  else $("#emptyState").hidden = false;
+}
+function setProviderVisibility() {
+  const p = $("#aiForm").elements.llm_provider.value || "none";
+  document.querySelectorAll("#aiForm [data-for]").forEach(el => { el.hidden = !el.dataset.for.split(" ").includes(p); });
+  $("#testAi").hidden = p === "none";
+}
+async function loadSettings() {
+  const st = await api("/api/settings");
+  state.settings = st;
+  const f = $("#aiForm").elements;
+  f.llm_provider.value = st.llm_provider;
+  for (const k of ["openai_base_url", "llm_model", "llm_chunk_chars", "llm_timeout"]) f[k].value = st[k] ?? "";
+  f.anthropic_api_key.value = ""; f.openai_api_key.value = "";
+  f.llm_model.placeholder = `Standard: ${st.llm_provider === "openai" ? "qwen2.5:14b" : "claude-sonnet-5"}`;
+  const keyInfo = (name) => st[name + "_set"] ? `Gespeichert (${esc(st[name + "_masked"])}). Leer lassen, um ihn zu behalten. <button type="button" class="linkish" data-clear="${name}">Key löschen</button>` : "Noch kein Key gespeichert.";
+  $("#anthropicKeyInfo").innerHTML = keyInfo("anthropic_api_key");
+  $("#openaiKeyInfo").innerHTML = keyInfo("openai_api_key");
+  setProviderVisibility();
+  $("#aiTestMsg").textContent = "";
+
+  const pf = $("#pwForm").elements;
+  pf.user.value = st.auth_user; pf.password.value = ""; pf.password2.value = "";
+  $("#pwState").innerHTML = st.password_set ? `<span class="ok-text">Passwortschutz aktiv</span>` : `<span class="err-text">kein Passwort</span>`;
+  $("#pwRemove").hidden = !st.password_set;
+  $("#pwWarn").hidden = st.password_set;
+
+  const of = $("#ocrForm").elements;
+  const langs = st.ocr_langs.length ? st.ocr_langs : [st.ocr_lang];
+  const langName = { deu: "Deutsch", eng: "Englisch", "deu+eng": "Deutsch + Englisch" };
+  const opts = [...new Set([...langs, ...(langs.includes("deu") && langs.includes("eng") ? ["deu+eng"] : [])])];
+  $("#ocrLang").innerHTML = opts.map(l => `<option value="${esc(l)}">${esc(langName[l] || l)}</option>`).join("");
+  of.ocr_lang.value = st.ocr_lang;
+  of.ocr_dpi.value = [200, 300, 400].includes(st.ocr_dpi) ? String(st.ocr_dpi) : "300";
+  of.max_upload_mb.value = st.max_upload_mb;
+  $("#setVersion").textContent = `Version ${st.version}`;
+  $("#dataDir").textContent = `Daten liegen in ${st.data_dir}. Für ein Backup diesen Ordner sichern.`;
+}
+async function saveAi(ev) {
+  ev.preventDefault();
+  const f = ev.target.elements;
+  const body = {
+    llm_provider: f.llm_provider.value || "none", openai_base_url: f.openai_base_url.value, llm_model: f.llm_model.value,
+    llm_chunk_chars: f.llm_chunk_chars.value, llm_timeout: f.llm_timeout.value,
+    anthropic_api_key: f.anthropic_api_key.value, openai_api_key: f.openai_api_key.value,
+  };
+  if (body.llm_provider === "anthropic" && !body.anthropic_api_key && !state.settings.anthropic_api_key_set) { toast("Bitte einen API-Key eintragen."); return; }
+  await api("/api/settings", { method: "PUT", json: body });
+  await refreshMeta(); await loadSettings(); toast("Gespeichert");
+}
+async function clearKey(name) {
+  if (!confirm("Gespeicherten Key löschen?")) return;
+  await api("/api/settings", { method: "PUT", json: { [name + "_clear"]: true } });
+  await refreshMeta(); await loadSettings(); toast("Key gelöscht");
+}
+async function testAi() {
+  const msg = $("#aiTestMsg");
+  msg.className = "small"; msg.textContent = "Teste … (zuerst speichern, falls du etwas geändert hast)";
+  try {
+    const r = await api("/api/settings/test", { method: "POST" });
+    msg.className = "small ok-text"; msg.textContent = `Verbindung klappt. ${r.model} antwortet: „${r.reply}“`;
+  } catch (e) { msg.className = "small err-text"; msg.textContent = e.message; }
+}
+async function loadModels() {
+  const btn = $("#loadModels"); btn.disabled = true;
+  try {
+    const r = await api("/api/settings/models");
+    $("#modelList").innerHTML = r.models.map(m => `<option value="${esc(m)}">`).join("");
+    toast(r.models.length ? `${r.models.length} Modelle gefunden. Ins Feld klicken zum Auswählen.` : "Keine Modelle gefunden.");
+    if (r.models.length) $("#aiForm").elements.llm_model.focus();
+  } catch (e) { toast("Zuerst speichern, dann Modelle laden. " + e.message, 6000); }
+  btn.disabled = false;
+}
+async function savePassword(ev) {
+  ev.preventDefault();
+  const f = ev.target.elements;
+  if (f.password.value.length < 8) { toast("Das Passwort muss mindestens 8 Zeichen haben."); return; }
+  if (f.password.value !== f.password2.value) { toast("Die Passwörter stimmen nicht überein."); return; }
+  await api("/api/settings/password", { method: "PUT", json: { user: f.user.value, password: f.password.value } });
+  toast("Passwort gesetzt. Der Browser fragt gleich danach.", 5000);
+  setTimeout(() => location.reload(), 1200);
+}
+async function removePassword() {
+  if (!confirm("Passwortschutz wirklich entfernen?")) return;
+  await api("/api/settings/password", { method: "PUT", json: { password: "" } });
+  await refreshMeta(); await loadSettings(); toast("Passwort entfernt");
+}
+async function saveOcr(ev) {
+  ev.preventDefault();
+  const f = ev.target.elements;
+  await api("/api/settings", { method: "PUT", json: { ocr_lang: f.ocr_lang.value, ocr_dpi: f.ocr_dpi.value, max_upload_mb: f.max_upload_mb.value } });
+  await loadSettings(); toast("Gespeichert");
+}
+
+// ---------- Start ----------
+async function init() {
+  await refreshMeta();
   $("#upType").innerHTML = Object.entries(state.meta.doc_types).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
   $("#catFilter").innerHTML += state.meta.categories.map(c => `<option>${esc(c)}</option>`).join("");
 
@@ -394,6 +498,21 @@ async function init() {
   $("#figures").addEventListener("change", e => onFigureChange(e).catch(err => toast(err.message)));
   $("#searchForm").onsubmit = e => doSearch(e).catch(err => toast(err.message));
   $("#pageClose").onclick = () => $("#pageDialog").close();
+
+  const guard = fn => (...a) => fn(...a).catch(e => toast(e.message, 6000));
+  $("#settingsBtn").onclick = () => showSettings($("#settingsView").hidden);
+  $("#aiBadge").onclick = () => showSettings(true);
+  $("#pwBadge").onclick = () => showSettings(true);
+  $("#settingsClose").onclick = () => showSettings(false);
+  document.addEventListener("click", e => { if (e.target.closest("[data-open-settings]")) showSettings(true); });
+  $("#providerCards").onchange = setProviderVisibility;
+  $("#aiForm").onsubmit = guard(saveAi);
+  $("#testAi").onclick = guard(testAi);
+  $("#loadModels").onclick = guard(loadModels);
+  $("#aiForm").addEventListener("click", e => { const b = e.target.closest("[data-clear]"); if (b) guard(clearKey)(b.dataset.clear); });
+  $("#pwForm").onsubmit = guard(savePassword);
+  $("#pwRemove").onclick = guard(removePassword);
+  $("#ocrForm").onsubmit = guard(saveOcr);
 
   await loadObjects();
   let last = null; try { last = +localStorage.getItem("weglupe.obj"); } catch { }

@@ -76,6 +76,10 @@ CREATE TABLE IF NOT EXISTS summaries (
     model TEXT DEFAULT '',
     created_at TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_findings_obj ON findings(object_id);
 CREATE INDEX IF NOT EXISTS idx_docs_obj ON documents(object_id);
 """

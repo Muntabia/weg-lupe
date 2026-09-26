@@ -6,7 +6,7 @@ import threading
 import traceback
 from collections import Counter
 
-from . import config, db, extract, llm, rules
+from . import db, extract, llm, rules, settings
 
 log = logging.getLogger("weglupe")
 
@@ -147,7 +147,7 @@ def run_ai_doc(doc_id: int):
         _set_doc(doc_id, ai_status="fehler: Text noch nicht gelesen")
         return
     page_rows = db.q("SELECT page_no, text FROM pages WHERE document_id = ? ORDER BY page_no", (doc_id,))
-    chunks = build_chunks(page_rows, config.LLM_CHUNK_CHARS)
+    chunks = build_chunks(page_rows, settings.get("llm_chunk_chars"))
     norm_pages = {r["page_no"]: _norm(r["text"]) for r in page_rows}
     label = f"{DOC_TYPES.get(doc['doc_type'], doc['doc_type'])} {doc['doc_year'] or ''} ({doc['filename']})".strip()
     found: list[dict] = []
@@ -264,7 +264,7 @@ def run_summary(object_id: int):
     try:
         text = llm.summarize(build_summary_payload(object_id))
         db.ex("UPDATE summaries SET status = 'fertig', text = ?, model = ?, created_at = datetime('now') WHERE object_id = ?",
-              (text, f"{config.LLM_PROVIDER}:{config.default_model()}", object_id))
+              (text, f"{settings.provider()}:{settings.model()}", object_id))
     except llm.LLMError as e:
         db.ex("UPDATE summaries SET status = ? WHERE object_id = ?", (f"fehler: {e}"[:500], object_id))
 

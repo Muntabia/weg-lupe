@@ -25,7 +25,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
   background: var(--surface); border-bottom: 1px solid var(--border); }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; color: var(--accent); }
 .brand span { color: var(--text); }
-.badge { margin-left: auto; font-size: 12px; padding: 3px 9px; border-radius: 99px; background: var(--surface-2); color: var(--muted); }
+.badge { border: none; cursor: pointer; margin-left: 0; font-size: 12px; padding: 3px 9px; border-radius: 99px; background: var(--surface-2); color: var(--muted); }
 .badge.on { color: var(--ok); }
 
 .layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: calc(100vh - 49px); }
@@ -146,3 +146,15 @@ dialog pre { white-space: pre-wrap; margin: 0; padding: 14px; font-size: 13px; f
 .f-snip, .ctx, .hit { overflow-wrap: anywhere; }
 @media (max-width: 800px) { .kpis { grid-template-columns: 1fr 1fr; } .obj-actions .btn { padding: 6px 10px; } }
 .dz-opts select, .dz-opts input { max-width: 100%; } .dz-opts label { max-width: 100%; }
+
+.gear { margin-left: 4px; display: inline-flex; }
+.notice.warn { background: var(--mittel-bg); color: var(--text); margin-bottom: 16px; }
+.radio-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.rc { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; cursor: pointer; }
+.rc:has(input:checked) { border-color: var(--accent); background: var(--surface-2); }
+.rc input { margin-top: 3px; }
+.form-grid + .form-grid { margin-top: 10px; }
+details summary { cursor: pointer; }
+.ok-text { color: var(--ok); } .err-text { color: var(--hoch); }
+#pwBadge { margin-left: auto; } #pwBadge[hidden] + #aiBadge { margin-left: auto; }
+.badge.warnb { background: var(--mittel-bg); color: var(--mittel); }

@@ -5,6 +5,7 @@ import logging
 import re
 import secrets
 import shutil
+import subprocess
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -14,7 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import analyze, config, db, rules
+from . import analyze, config, db, llm, rules, settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 STATIC = Path(__file__).parent / "static"
@@ -31,13 +32,13 @@ app = FastAPI(title="WEG-Lupe", docs_url=None, redoc_url=None, lifespan=lifespan
 
 @app.middleware("http")
 async def basic_auth(request: Request, call_next):
-    if config.APP_PASSWORD and request.url.path != "/healthz":
+    if request.url.path != "/healthz" and settings.password_set():
         header = request.headers.get("authorization", "")
         ok = False
         if header.lower().startswith("basic "):
             try:
                 user, _, pw = base64.b64decode(header[6:]).decode().partition(":")
-                ok = secrets.compare_digest(user, config.APP_USER) and secrets.compare_digest(pw, config.APP_PASSWORD)
+                ok = secrets.compare_digest(user, settings.auth_user()) and settings.check_password(pw)
             except Exception:
                 ok = False
         if not ok:
@@ -63,9 +64,11 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 @app.get("/api/status")
 def status():
     return {
-        "llm_enabled": config.llm_enabled(),
-        "provider": config.LLM_PROVIDER,
-        "model": config.default_model(),
+        "llm_enabled": settings.llm_enabled(),
+        "provider": settings.provider(),
+        "model": settings.model(),
+        "password_set": settings.password_set(),
+        "version": config.VERSION,
         "doc_types": analyze.DOC_TYPES,
         "categories": rules.CATEGORIES,
     }
@@ -164,10 +167,10 @@ async def upload(oid: int, files: list[UploadFile] = File(...), doc_type: str = 
         with dest.open("wb") as out:
             while chunk := await f.read(1024 * 1024):
                 size += len(chunk)
-                if size > config.MAX_UPLOAD_MB * 1024 * 1024:
+                if size > settings.get("max_upload_mb") * 1024 * 1024:
                     out.close()
                     dest.unlink(missing_ok=True)
-                    raise HTTPException(413, f"{name} ist größer als {config.MAX_UPLOAD_MB} MB")
+                    raise HTTPException(413, f"{name} ist größer als {settings.get('max_upload_mb')} MB")
                 out.write(chunk)
         with dest.open("rb") as fh:
             if fh.read(5) != b"%PDF-":
@@ -294,8 +297,8 @@ def search(oid: int, q: str):
 # ---------------- KI ----------------
 
 def _require_llm():
-    if not config.llm_enabled():
-        raise HTTPException(400, "Keine KI konfiguriert. Setze LLM_PROVIDER und ggf. ANTHROPIC_API_KEY bzw. OPENAI_BASE_URL.")
+    if not settings.llm_enabled():
+        raise HTTPException(400, "Keine KI eingerichtet. Bitte unter Einstellungen einen KI-Anbieter wählen.")
 
 
 @app.post("/api/objects/{oid}/ai")
@@ -319,6 +322,88 @@ def run_summary(oid: int):
     _require_llm()
     analyze.enqueue("summary", oid)
     return {"ok": True}
+
+
+# ---------------- Einstellungen ----------------
+
+def _ocr_langs() -> list[str]:
+    try:
+        out = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True, timeout=10).stdout
+        return [ln.strip() for ln in out.splitlines()[1:] if ln.strip() and ln.strip() != "osd"]
+    except Exception:
+        return []
+
+
+@app.get("/api/settings")
+def get_settings():
+    out = {}
+    for key in settings.SPEC:
+        val = settings.get(key)
+        if key in settings.SECRETS:
+            out[key] = ""
+            out[key + "_set"] = bool(val)
+            out[key + "_masked"] = settings.mask(val)
+        else:
+            out[key] = val
+    out["model_effective"] = settings.model()
+    out["password_set"] = settings.password_set()
+    out["auth_user"] = settings.auth_user()
+    out["ocr_langs"] = _ocr_langs()
+    out["data_dir"] = str(config.DATA_DIR)
+    out["version"] = config.VERSION
+    return out
+
+
+@app.put("/api/settings")
+def put_settings(body: dict):
+    values = {k: v for k, v in body.items() if k in settings.SPEC}
+    for key in settings.SECRETS:  # leeres Feld = gespeicherten Schlüssel behalten
+        if key in values and not str(values[key]).strip() and not body.get(key + "_clear"):
+            del values[key]
+        if body.get(key + "_clear"):
+            values[key] = ""
+    try:
+        settings.set_many(values)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return get_settings()
+
+
+@app.post("/api/settings/test")
+def test_settings():
+    if not settings.llm_enabled():
+        raise HTTPException(400, "Kein KI-Anbieter eingerichtet.")
+    try:
+        reply = llm.test_connection()
+    except llm.LLMError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "reply": reply, "model": settings.model()}
+
+
+@app.get("/api/settings/models")
+def models():
+    try:
+        return {"models": llm.list_models()}
+    except llm.LLMError as e:
+        raise HTTPException(400, str(e))
+
+
+class PasswordIn(BaseModel):
+    password: str = ""
+    user: str = ""
+
+
+@app.put("/api/settings/password")
+def put_password(body: PasswordIn):
+    pw = body.password
+    if pw and len(pw) < 8:
+        raise HTTPException(400, "Das Passwort muss mindestens 8 Zeichen haben.")
+    if body.user.strip():
+        db.ex("INSERT INTO settings (key, value) VALUES ('auth_user', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+              (body.user.strip(),))
+    settings.set_password(pw or None)
+    settings._invalidate()
+    return {"password_set": settings.password_set()}
 
 
 # ---------------- Bericht ----------------

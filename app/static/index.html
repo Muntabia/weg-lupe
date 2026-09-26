@@ -14,7 +14,11 @@
     <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><circle cx="13" cy="13" r="9" fill="none" stroke="currentColor" stroke-width="3"/><path d="M20 20l8 8" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/></svg>
     <span>WEG-Lupe</span>
   </div>
-  <span class="badge" id="aiBadge">KI: …</span>
+  <button class="badge warnb" id="pwBadge" hidden title="Zugang ist nicht geschützt">Kein Passwort</button>
+  <button class="badge" id="aiBadge">KI: …</button>
+  <button class="icon-btn gear" id="settingsBtn" title="Einstellungen" aria-label="Einstellungen">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68 1.65 1.65 0 0 0 10 3.17V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
 </header>
 
 <div class="layout">
@@ -32,6 +36,80 @@
       <h1>WEG-Unterlagen prüfen, bevor du kaufst</h1>
       <p>Lade Protokolle, Wirtschaftspläne und Jahresabrechnungen hoch. WEG-Lupe markiert Sonderumlagen, Sanierungsstau, Schäden, Streit und vertagte Themen, jeweils mit Seitenangabe.</p>
       <button class="btn primary" id="emptyNewBtn">Erstes Objekt anlegen</button>
+    </section>
+
+    <section id="settingsView" hidden>
+      <div class="obj-head">
+        <div><h1>Einstellungen</h1><div class="muted" id="setVersion"></div></div>
+        <button class="btn" id="settingsClose">Zurück</button>
+      </div>
+
+      <div class="notice warn" id="pwWarn" hidden>Kein Passwort gesetzt. Jeder in deinem Netzwerk kann die Unterlagen sehen. Setz unten unter „Zugang“ ein Passwort.</div>
+
+      <form class="card" id="aiForm">
+        <div class="card-head"><h2>KI-Analyse</h2></div>
+        <div class="radio-cards" id="providerCards">
+          <label class="rc"><input type="radio" name="llm_provider" value="none"><span><strong>Aus</strong><br><span class="muted small">Nur Stichwort-Prüfung. Kostenlos, alles bleibt lokal.</span></span></label>
+          <label class="rc"><input type="radio" name="llm_provider" value="anthropic"><span><strong>Claude (Anthropic)</strong><br><span class="muted small">Beste Erkennung. Unterlagen werden an die API gesendet. Kostet API-Guthaben.</span></span></label>
+          <label class="rc"><input type="radio" name="llm_provider" value="openai"><span><strong>Lokal (Ollama o. ä.)</strong><br><span class="muted small">Bleibt in deinem Netz. Braucht einen eigenen Rechner/LXC mit genug RAM.</span></span></label>
+        </div>
+
+        <div class="form-grid" data-for="anthropic">
+          <label class="span2">API-Key <input name="anthropic_api_key" type="password" autocomplete="off" placeholder="sk-ant-…"></label>
+          <div class="span2 small muted" id="anthropicKeyInfo"></div>
+        </div>
+        <div class="form-grid" data-for="openai">
+          <label class="span2">Adresse der API <input name="openai_base_url" placeholder="http://192.168.1.50:11434/v1"></label>
+          <label class="span2">API-Key (optional) <input name="openai_api_key" type="password" autocomplete="off" placeholder="bei Ollama leer lassen"></label>
+          <div class="span2 small muted" id="openaiKeyInfo"></div>
+        </div>
+        <div class="form-grid" data-for="anthropic openai">
+          <label class="span2">Modell
+            <span class="row-gap"><input name="llm_model" list="modelList" placeholder="Standard" style="flex:1"><button type="button" class="btn small" id="loadModels">Modelle laden</button></span>
+            <datalist id="modelList"></datalist>
+          </label>
+          <details class="span2">
+            <summary class="small muted">Erweitert</summary>
+            <div class="form-grid" style="margin-top:8px">
+              <label>Zeichen pro KI-Abschnitt<input name="llm_chunk_chars" inputmode="numeric"></label>
+              <label>Zeitlimit pro Anfrage (Sekunden)<input name="llm_timeout" inputmode="numeric"></label>
+              <div class="span2 small muted">Lokale Modelle mit kleinem Kontextfenster: Abschnitt auf 6000–8000 Zeichen senken.</div>
+            </div>
+          </details>
+        </div>
+        <div class="form-actions" style="margin-top:12px">
+          <button class="btn primary" type="submit">Speichern</button>
+          <button class="btn" type="button" id="testAi">Verbindung testen</button>
+          <span class="small" id="aiTestMsg"></span>
+        </div>
+      </form>
+
+      <form class="card" id="pwForm" autocomplete="off">
+        <div class="card-head"><h2>Zugang</h2><span class="small muted" id="pwState"></span></div>
+        <div class="form-grid">
+          <label>Benutzername<input name="user" autocomplete="off"></label>
+          <label>Neues Passwort<input name="password" type="password" autocomplete="new-password" placeholder="mind. 8 Zeichen"></label>
+          <label>Passwort wiederholen<input name="password2" type="password" autocomplete="new-password"></label>
+        </div>
+        <p class="small muted">Nach dem Speichern fragt der Browser nach Benutzername und Passwort. Ausgesperrt? Auf dem Proxmox-Host <code>pct exec &lt;ID&gt; -- weglupe-reset-password</code> ausführen.</p>
+        <div class="form-actions">
+          <button class="btn primary" type="submit">Passwort speichern</button>
+          <button class="btn danger-ghost" type="button" id="pwRemove">Passwort entfernen</button>
+        </div>
+      </form>
+
+      <form class="card" id="ocrForm">
+        <div class="card-head"><h2>Texterkennung und Uploads</h2></div>
+        <div class="form-grid">
+          <label>Sprache<select name="ocr_lang" id="ocrLang"></select></label>
+          <label>Auflösung (DPI)<select name="ocr_dpi"><option value="200">200 (schnell)</option><option value="300">300 (empfohlen)</option><option value="400">400 (schlechte Scans)</option></select></label>
+          <label>Maximale Dateigröße (MB)<input name="max_upload_mb" inputmode="numeric"></label>
+        </div>
+        <p class="small muted">Änderungen gelten für neu hochgeladene oder neu eingelesene Dokumente (↻ in der Unterlagen-Liste).</p>
+        <div class="form-actions"><button class="btn primary" type="submit">Speichern</button></div>
+      </form>
+
+      <p class="small muted" id="dataDir"></p>
     </section>
 
     <section id="objView" hidden>

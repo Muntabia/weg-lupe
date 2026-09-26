@@ -19,53 +19,69 @@ Lade die Protokolle der Eigentümerversammlungen, Wirtschaftspläne, Jahresabrec
 
 ## Installation auf Proxmox
 
-### Variante A: Docker (in einem LXC mit Docker oder in einer VM)
+Auf dem Proxmox-Host (Shell im Webinterface: Rechenzentrum → Knoten → Shell) als root:
 
 ```bash
-git clone <dein-repo> weglupe && cd weglupe   # oder ZIP entpacken
-cp .env.example .env                            # Einstellungen anpassen, siehe unten
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Muntabia/weg-lupe/main/proxmox/weg-lupe-lxc.sh)"
+```
+
+Das Skript
+- nimmt die nächste freie Container-ID und den ersten passenden Speicher,
+- lädt die aktuelle Debian-Vorlage,
+- legt einen unprivilegierten LXC an (2 Kerne, 2 GB RAM, 10 GB, DHCP an `vmbr0`),
+- installiert WEG-Lupe mit Texterkennung als Dienst, der beim Booten startet,
+- erzeugt ein zufälliges Passwort und zeigt am Ende Adresse, Benutzer und Passwort an.
+
+Andere Werte lassen sich vorab setzen, zum Beispiel:
+
+```bash
+CTID=150 RAM=4096 STORAGE=local-zfs IP=192.168.1.60/24 GATEWAY=192.168.1.1 \
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/Muntabia/weg-lupe/main/proxmox/weg-lupe-lxc.sh)"
+```
+
+Mögliche Variablen: `CTID`, `CT_HOSTNAME`, `CORES`, `RAM`, `SWAP`, `DISK`, `STORAGE`, `TEMPLATE_STORAGE`, `BRIDGE`, `IP`, `GATEWAY`, `PORT`, `REPO_URL`, `BRANCH`.
+
+Das Repository muss öffentlich sein, damit Skript und `git clone` ohne Anmeldung funktionieren.
+
+### Befehle auf dem Proxmox-Host
+
+| Zweck | Befehl |
+|---|---|
+| Auf neue Version aktualisieren | `pct exec <ID> -- weglupe-update` |
+| Passwort entfernen (ausgesperrt) | `pct exec <ID> -- weglupe-reset-password` |
+| Neues Passwort setzen | `pct exec <ID> -- weglupe-reset-password NEUES_PASSWORT` |
+| Log ansehen | `pct exec <ID> -- journalctl -u weg-lupe -f` |
+| Backup | `vzdump <ID>` oder im Proxmox-Webinterface |
+
+Die Daten liegen im Container unter `/var/lib/weg-lupe`.
+
+### Alternative: Docker
+
+```bash
 docker compose up -d --build
 ```
 
-Danach ist die Anwendung unter `http://<IP-des-Containers>:8080` erreichbar. Die Daten liegen in `./data`.
+Die Daten liegen dann in `./data`.
 
-### Variante B: Debian-LXC ohne Docker
+## Einstellungen
 
-1. In Proxmox einen Debian-12- oder -13-LXC anlegen (1–2 Kerne, 2 GB RAM, 10 GB Speicher reichen).
-2. Den Projektordner in den Container kopieren, z. B. mit `scp -r weglupe root@<ip>:/root/`.
-3. Im Container:
+Alles wird in der App eingestellt, über das Zahnrad oben rechts. Eine `.env`-Datei ist nicht nötig.
 
-```bash
-cd /root/weglupe
-./install-lxc.sh
-nano /opt/weglupe/.env        # KI und Passwort einstellen
-systemctl restart weglupe
-```
+- **KI-Analyse:** Aus, Claude (Anthropic) oder ein lokales Modell über eine OpenAI-kompatible Schnittstelle (Ollama, LM Studio, vLLM). Mit „Modelle laden“ holst du die verfügbaren Modelle, mit „Verbindung testen“ prüfst du Adresse und Key. API-Keys werden nach dem Speichern nie wieder angezeigt, nur die letzten vier Zeichen.
+- **Zugang:** Benutzername und Passwort (HTTP-Basic-Auth, Passwort als PBKDF2-Hash gespeichert).
+- **Texterkennung:** Sprache, Auflösung und maximale Dateigröße.
 
-Die Daten liegen dann in `/var/lib/weglupe`. Logs: `journalctl -u weglupe -f`.
-
-## Einstellungen (`.env`)
-
-| Variable | Bedeutung |
-|---|---|
-| `LLM_PROVIDER` | `none` (nur Stichworte), `anthropic` oder `openai` (jede OpenAI-kompatible API) |
-| `ANTHROPIC_API_KEY` | API-Key für Claude, wenn `anthropic` |
-| `OPENAI_BASE_URL` | z. B. `http://192.168.1.50:11434/v1` für Ollama |
-| `LLM_MODEL` | Modellname. Standard: `claude-sonnet-5` bzw. `qwen2.5:14b` |
-| `LLM_CHUNK_CHARS` | Zeichen pro KI-Abschnitt. Für lokale Modelle mit kleinem Kontext auf 8000 senken |
-| `APP_USER` / `APP_PASSWORD` | Einfacher Passwortschutz. Leer = kein Schutz |
-| `OCR_LANG`, `OCR_DPI` | Sprache und Auflösung der Texterkennung |
-| `MAX_UPLOAD_MB` | Maximale Dateigröße |
+Für Docker-Nutzer: Umgebungsvariablen wie `LLM_PROVIDER`, `ANTHROPIC_API_KEY`, `OPENAI_BASE_URL` oder `APP_PASSWORD` werden als Startwerte gelesen, solange in der App nichts gespeichert ist.
 
 ### Welche KI?
 
-- **Anthropic (Claude):** die beste Erkennung. Die Unterlagen gehen dabei an die API. WEG-Protokolle enthalten Namen und teils Zahlungsrückstände anderer Eigentümer, das solltest du bedenken. Eine typische Prüfung mit 100–200 Seiten kostet grob im Bereich von einigen Cent bis wenigen Euro, je nach Modell.
-- **Lokal mit Ollama:** Die Daten bleiben bei dir, es kostet nichts. Dafür ist die Erkennung schwächer und es braucht ordentlich Hardware (für ein 14B-Modell etwa 16 GB RAM, mit GPU deutlich schneller). Ollama kann in einem eigenen LXC auf demselben Proxmox laufen.
+- **Anthropic (Claude):** die beste Erkennung. Die Unterlagen gehen dabei an die API. WEG-Protokolle enthalten Namen und teils Zahlungsrückstände anderer Eigentümer, das solltest du bedenken. Eine typische Prüfung mit 100–200 Seiten kostet grob einige Cent bis wenige Euro, je nach Modell.
+- **Lokal mit Ollama:** Die Daten bleiben bei dir, es kostet nichts. Dafür ist die Erkennung schwächer und es braucht ordentlich Hardware (für ein 14B-Modell etwa 16 GB RAM, mit GPU deutlich schneller). Ollama kann in einem eigenen LXC auf demselben Proxmox laufen. Adresse in den Einstellungen dann z. B. `http://192.168.1.50:11434/v1`.
 - **Ohne KI:** Die Stichwort-Prüfung findet die meisten Warnsignale, erzeugt aber mehr Treffer, die du selbst sortieren musst.
 
 ## Sicherheit
 
-Die Anwendung ist für dein Heimnetz gedacht. Stell sie nicht ungeschützt ins Internet. Für Zugriff von unterwegs nutze ein VPN (WireGuard, Tailscale) oder einen Reverse Proxy mit HTTPS und setze `APP_PASSWORD`.
+Die Anwendung ist für dein Heimnetz gedacht. Stell sie nicht ungeschützt ins Internet. Für Zugriff von unterwegs nutze ein VPN (WireGuard, Tailscale) oder einen Reverse Proxy mit HTTPS. Ohne HTTPS geht das Passwort im Klartext durchs Netz, im eigenen LAN ist das meist vertretbar.
 
 ## Entwicklung
 
@@ -83,6 +99,8 @@ Aufbau:
 - `app/rules.py`: Stichwort-Regeln, Betrags- und Kennzahlenerkennung. Neue Regeln einfach in `RULES` ergänzen.
 - `app/extract.py`: PDF-Text und Texterkennung
 - `app/llm.py`: KI-Anbindung und Prompts
+- `app/settings.py`: Einstellungen in der Datenbank, Passwort-Hashing
+- `proxmox/weg-lupe-lxc.sh`: Installation auf Proxmox, `install-lxc.sh`: Einrichtung im Container
 - `app/analyze.py`: Verarbeitung im Hintergrund, Zitatprüfung, Zusammenfassung
 - `app/main.py`: Web-API und Bericht
 - `app/static/`: Oberfläche ohne Framework und ohne Build-Schritt

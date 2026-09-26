@@ -5,7 +5,7 @@ from typing import Callable, Iterator
 
 import pymupdf
 
-from . import config
+from . import settings
 
 
 def normalize(text: str) -> str:
@@ -18,10 +18,10 @@ def normalize(text: str) -> str:
 
 
 def ocr_page(page: pymupdf.Page) -> str:
-    pix = page.get_pixmap(dpi=config.OCR_DPI, colorspace=pymupdf.csGRAY)
+    pix = page.get_pixmap(dpi=settings.get("ocr_dpi"), colorspace=pymupdf.csGRAY)
     png = pix.tobytes("png")
     res = subprocess.run(
-        ["tesseract", "stdin", "stdout", "-l", config.OCR_LANG, "--psm", "3"],
+        ["tesseract", "stdin", "stdout", "-l", settings.get("ocr_lang"), "--psm", "3"],
         input=png,
         capture_output=True,
         timeout=180,
@@ -38,7 +38,7 @@ def extract_pages(path: str, progress: Callable[[str], None] | None = None) -> I
         for i, page in enumerate(doc):
             text = page.get_text("text") or ""
             used_ocr = False
-            if len(text.strip()) < config.OCR_MIN_CHARS:
+            if len(text.strip()) < settings.get("ocr_min_chars"):
                 if progress:
                     progress(f"OCR Seite {i + 1}/{total}")
                 try:
