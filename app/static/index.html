@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WEG-Lupe</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='13' cy='13' r='9' fill='none' stroke='%232f6fed' stroke-width='3'/><path d='M20 20l8 8' stroke='%232f6fed' stroke-width='3.5' stroke-linecap='round'/></svg>">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <button class="icon-btn only-mobile" id="menuBtn" aria-label="Objekte anzeigen">☰</button>
+  <div class="brand">
+    <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><circle cx="13" cy="13" r="9" fill="none" stroke="currentColor" stroke-width="3"/><path d="M20 20l8 8" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/></svg>
+    <span>WEG-Lupe</span>
+  </div>
+  <span class="badge" id="aiBadge">KI: …</span>
+</header>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <h2>Objekte</h2>
+      <button class="btn small" id="newObjBtn">+ Neu</button>
+    </div>
+    <ul class="obj-list" id="objList"></ul>
+    <p class="hint side-hint">Ein Objekt = eine Wohnung, die du prüfst. Lade alle WEG-Unterlagen dazu hoch.</p>
+  </aside>
+
+  <main class="main" id="main">
+    <section class="empty" id="emptyState">
+      <h1>WEG-Unterlagen prüfen, bevor du kaufst</h1>
+      <p>Lade Protokolle, Wirtschaftspläne und Jahresabrechnungen hoch. WEG-Lupe markiert Sonderumlagen, Sanierungsstau, Schäden, Streit und vertagte Themen, jeweils mit Seitenangabe.</p>
+      <button class="btn primary" id="emptyNewBtn">Erstes Objekt anlegen</button>
+    </section>
+
+    <section id="objView" hidden>
+      <div class="obj-head">
+        <div>
+          <h1 id="objName"></h1>
+          <div class="muted" id="objAddr"></div>
+        </div>
+        <div class="obj-actions">
+          <button class="btn" id="editObjBtn">Stammdaten</button>
+          <a class="btn" id="reportBtn" target="_blank" rel="noopener">Bericht</a>
+          <button class="btn danger-ghost" id="delObjBtn">Löschen</button>
+        </div>
+      </div>
+
+      <form class="card form-grid" id="objForm" hidden>
+        <label>Name<input name="name" required></label>
+        <label>Adresse<input name="address"></label>
+        <label>Gesamtwohnfläche der WEG (m²)<input name="total_area_m2" inputmode="decimal"></label>
+        <label>Wohnfläche deiner Wohnung (m²)<input name="unit_area_m2" inputmode="decimal"></label>
+        <label>Miteigentumsanteil<input name="mea_share" placeholder="z. B. 85/10000 oder 0,0085"></label>
+        <label>Kaufpreis (€)<input name="price_eur" inputmode="decimal"></label>
+        <label class="span2">Notizen<textarea name="notes" rows="2"></textarea></label>
+        <div class="span2 form-actions"><button class="btn primary" type="submit">Speichern</button><button class="btn" type="button" id="cancelObjForm">Abbrechen</button></div>
+      </form>
+
+      <div class="kpis" id="kpis"></div>
+
+      <div class="card" id="summaryCard">
+        <div class="card-head">
+          <h2>Einschätzung</h2>
+          <div class="row-gap">
+            <span class="muted small" id="summaryMeta"></span>
+            <button class="btn primary" id="aiBtn">KI-Analyse starten</button>
+          </div>
+        </div>
+        <div id="summaryBody" class="md"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Unterlagen</h2></div>
+        <div class="dropzone" id="dropzone" tabindex="0">
+          <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
+          <div><strong>PDFs hierher ziehen</strong> oder <button type="button" class="linkish" id="pickBtn">auswählen</button></div>
+          <div class="dz-opts">
+            <label>Art <select id="upType"></select></label>
+            <label>Jahr <input id="upYear" inputmode="numeric" placeholder="auto" size="5"></label>
+          </div>
+          <div class="muted small">Gescannte PDFs werden per Texterkennung gelesen. Das dauert etwa 3–10 Sekunden pro Seite.</div>
+        </div>
+        <div id="uploadMsg" class="small"></div>
+        <div class="table-wrap"><table class="docs" id="docsTable"></table></div>
+        <div id="missingBox"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Befunde</h2>
+          <div class="filters" id="filters">
+            <div class="chips" id="sevChips"></div>
+            <select id="srcFilter" aria-label="Quelle">
+              <option value="">Alle Quellen</option><option value="ki">Nur KI</option><option value="regel">Nur Stichworte</option>
+            </select>
+            <select id="catFilter" aria-label="Kategorie"><option value="">Alle Kategorien</option></select>
+            <label class="small check"><input type="checkbox" id="showDismissed"> ausgeblendete</label>
+          </div>
+        </div>
+        <div id="findings"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Kennzahlen</h2></div>
+        <p class="muted small">Gefundene Zahlen zur Erhaltungsrücklage und zum Hausgeld. Bestätige die richtigen Werte, dann rechnet WEG-Lupe sie auf m² und deinen Anteil um.</p>
+        <div id="figures"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Volltextsuche</h2></div>
+        <form id="searchForm" class="search-row"><input id="searchInput" placeholder="z. B. Aufzug, Balkon, Rauchmelder …"><button class="btn">Suchen</button></form>
+        <div id="searchResults"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<dialog id="pageDialog">
+  <div class="dlg-head"><strong id="pageTitle"></strong><button class="icon-btn" id="pageClose" aria-label="Schließen">✕</button></div>
+  <pre id="pageText"></pre>
+</dialog>
+<div class="toast" id="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
